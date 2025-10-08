@@ -22,12 +22,12 @@ int main() {
     // read the header:
     fread(&wadheader, sizeof(Header), 1, wadfile);
     strncpy(wad_ident, wadheader.identification, 4);
+    // TODO: abort if wad_ident is not IWAD or PWAD
 #ifdef DEBUG
     printf("<!--\n");
     printf("%s => %s\n", filename, wad_ident);
     printf("num_lumps: %d\n", wadheader.num_lumps);
     printf("infotableofs: %d\n", wadheader.infotableofs);
-    printf("-->\n");
 #endif
 
     Direntry direntry;
@@ -35,6 +35,7 @@ int main() {
     Direntry d_vertexes;
     bool found = false;
     for (int i=0; i<wadheader.num_lumps; ++i) {
+        // TODO: check if fseek/fread
         fseek(wadfile, wadheader.infotableofs+(i*sizeof(Direntry)), SEEK_SET);
         fread(&direntry, sizeof(Direntry), 1, wadfile);
         if (strncmp(direntry.name, mapname, strlen(mapname)) == 0) {
@@ -53,21 +54,19 @@ int main() {
         long int num_vertexes = d_vertexes.size/sizeof(Vertex);
         long int num_linedefs = d_linedefs.size/sizeof(Linedef);
 #ifdef DEBUG
-        printf("<!--\n");
         printf("%ld Linedefs pos: %d / size: %d\n", num_linedefs, d_linedefs.filepos, d_linedefs.size);
         printf("%ld Vertexes pos: %d / size: %d\n", num_vertexes, d_vertexes.filepos, d_vertexes.size);
-        printf("-->\n");
 #endif
         fseek(wadfile, d_linedefs.filepos, SEEK_SET);
         fread(linedefs, d_linedefs.size, 1, wadfile);
         fseek(wadfile, d_vertexes.filepos, SEEK_SET);
         fread(vertexes, d_vertexes.size, 1, wadfile);
         // SVG stuff:
-        int max_x = -9999;
-        int min_x = 0;
-        int max_y = -9999;
-        int min_y = 0;
-        for (int i=0; i<num_vertexes; ++i) {
+        int max_x = vertexes[0].x;
+        int min_x = vertexes[0].x;
+        int max_y = vertexes[0].y;
+        int min_y = vertexes[0].y;
+        for (int i=1; i<num_vertexes; ++i) {
             if(vertexes[i].x > max_x) max_x = vertexes[i].x;
             if(vertexes[i].x < min_x) min_x = vertexes[i].x;
             if(vertexes[i].y > max_y) max_y = vertexes[i].y;
@@ -79,12 +78,12 @@ int main() {
         if (min_x<0) x_off = min_x * -1;
         if (min_y<0) y_off = min_y * -1;
 #ifdef DEBUG
-        printf("<!--\n");
         printf("min/max x: %d / %d\n", min_x, max_x);
         printf("min/max y: %d / %d\n", min_y, max_y);
         printf("-->\n");
 #endif
 
+        // TODO: write directly into outfile
         printf("<svg version=\"1.1\"");
         printf(" width=\"%d\" height=\"%d\">\n", max_x + x_off, max_y + y_off);
         for (int i=0; i<num_linedefs; ++i) {
@@ -95,14 +94,19 @@ int main() {
 #ifdef DEBUG
             printf("<!-- Flags: %d-->\n", linedefs[i].flags);
 #endif
-            printf("<line x1=\"%d\" y1=\"%d\"", start.x + x_off, start.y + y_off);
-            printf(" x2=\"%d\" y2=\"%d\"", end.x + x_off, end.y + y_off);
+            printf("<line x1=\"%d\" y1=\"%d\"", start.x + x_off, max_y - start.y );
+            printf(" x2=\"%d\" y2=\"%d\"", end.x + x_off, max_y - end.y);
             printf(" stroke=\"%s\" stroke-width=\"4\"/>\n", (linedefs[i].flags & 4 == 4) ? "black" : "grey");
         }
         printf("</svg>\n");
         free(linedefs);
         free(vertexes);
 
+    }
+    else {
+        fprintf(stderr, "%s not found in %s!\n", mapname, filename);
+        fclose(wadfile);
+        return 1;
     }
 
     fclose(wadfile);
