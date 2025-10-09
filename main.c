@@ -4,14 +4,37 @@
 #include <stdlib.h>
 #include "map2img.h"
 
-#define DEBUG
+#define ARG_IMPLEMENTATION
+#include "args.h"
 
-int main() {
-    // let's hardcode some stuff for now:
-    char* filename = "/media/sdb1/Spiele/doom/DOOM1.WAD";
-    char* mapname  = "E1M1";
+int main(int argc, char** argv) {
+    bool verbose = false;
     Header wadheader;
     char wad_ident[5] = "    ";
+
+    // commandline arguments:
+    arglist myarglist;
+    init_list(&myarglist);
+    add_arg(&myarglist, "-v", BOOL, "verbose output", false);
+    add_arg(&myarglist, "-f", STRING, "WAD file", true);
+    add_arg(&myarglist, "-m", STRING, "map name (e.g. E1M1)", true);
+    add_arg(&myarglist, "-o", STRING, "output file name", false);
+    if (!parse_args(&myarglist, argc, argv)) {
+        fprintf(stderr, "Error parsing arguments!\n");
+        print_help(&myarglist);
+        return 1;
+    }
+    char* filename        = get_string_val(&myarglist, "-f");
+    char* mapname         = get_string_val(&myarglist, "-m");
+    char* output_filename = NULL;
+
+    if (is_set(&myarglist, "-v")) {
+            verbose = true;
+            }
+
+    if (is_set(&myarglist, "-o")) {
+        output_filename = get_string_val(&myarglist, "-o");
+    }
 
     FILE* wadfile = fopen(filename, "rb");
     if (wadfile == NULL) {
@@ -22,13 +45,10 @@ int main() {
     // read the header:
     fread(&wadheader, sizeof(Header), 1, wadfile);
     strncpy(wad_ident, wadheader.identification, 4);
-    // TODO: abort if wad_ident is not IWAD or PWAD
-#ifdef DEBUG
-    printf("<!--\n");
-    printf("%s => %s\n", filename, wad_ident);
-    printf("num_lumps: %d\n", wadheader.num_lumps);
-    printf("infotableofs: %d\n", wadheader.infotableofs);
-#endif
+    if (strcmp(wad_ident, "IWAD") != 0 && strcmp(wad_ident, "PWAD") != 0) {
+        fprintf(stderr, "ERROR, no wadfile (wad_ident: %s)\n", wad_ident);
+        return 1;
+    }
 
     Direntry direntry;
     Direntry d_linedefs;
@@ -49,14 +69,32 @@ int main() {
         }
     }
     if (found) {
+        FILE* output;
+        if (output_filename) {
+            output = fopen(output_filename, "w");
+            if (!output) {
+                fprintf(stderr, "ERROR, could not open output file %s\n", output_filename);
+                return 1;
+            }
+        }
+        else {
+            output = stdout;
+        }
+
+
         Linedef* linedefs = malloc(d_linedefs.size);
         Vertex* vertexes  = malloc(d_vertexes.size);
         long int num_vertexes = d_vertexes.size/sizeof(Vertex);
         long int num_linedefs = d_linedefs.size/sizeof(Linedef);
-#ifdef DEBUG
-        printf("%ld Linedefs pos: %d / size: %d\n", num_linedefs, d_linedefs.filepos, d_linedefs.size);
-        printf("%ld Vertexes pos: %d / size: %d\n", num_vertexes, d_vertexes.filepos, d_vertexes.size);
-#endif
+        if (verbose) {
+            fprintf(output, "<!--\n");
+            fprintf(output, "%s => %s\n", filename, wad_ident);
+            fprintf(output, "num_lumps: %d\n", wadheader.num_lumps);
+            fprintf(output, "infotableofs: %d\n", wadheader.infotableofs);
+            fprintf(output, "%ld Linedefs pos: %d / size: %d\n", num_linedefs, d_linedefs.filepos, d_linedefs.size);
+            fprintf(output, "%ld Vertexes pos: %d / size: %d\n", num_vertexes, d_vertexes.filepos, d_vertexes.size);
+        }
+
         fseek(wadfile, d_linedefs.filepos, SEEK_SET);
         fread(linedefs, d_linedefs.size, 1, wadfile);
         fseek(wadfile, d_vertexes.filepos, SEEK_SET);
@@ -77,30 +115,36 @@ int main() {
         int y_off = 0;
         if (min_x<0) x_off = min_x * -1;
         if (min_y<0) y_off = min_y * -1;
-#ifdef DEBUG
-        printf("min/max x: %d / %d\n", min_x, max_x);
-        printf("min/max y: %d / %d\n", min_y, max_y);
-        printf("-->\n");
-#endif
+
+        if (verbose) {
+            fprintf(output, "min/max x: %d / %d\n", min_x, max_x);
+            fprintf(output, "min/max y: %d / %d\n", min_y, max_y);
+            fprintf(output, "-->\n");
+        }
 
         // TODO: write directly into outfile
-        printf("<svg version=\"1.1\"");
-        printf(" width=\"%d\" height=\"%d\">\n", max_x + x_off, max_y + y_off);
+        fprintf(output, "<svg version=\"1.1\"");
+        fprintf(output, " width=\"%d\" height=\"%d\">\n", max_x + x_off, max_y + y_off);
         for (int i=0; i<num_linedefs; ++i) {
             int16_t v_index_start = linedefs[i].v_start;
             int16_t v_index_end   = linedefs[i].v_end;
             Vertex start = vertexes[v_index_start];
             Vertex end   = vertexes[v_index_end];
-#ifdef DEBUG
-            printf("<!-- Flags: %d-->\n", linedefs[i].flags);
-#endif
-            printf("<line x1=\"%d\" y1=\"%d\"", start.x + x_off, max_y - start.y );
-            printf(" x2=\"%d\" y2=\"%d\"", end.x + x_off, max_y - end.y);
-            printf(" stroke=\"%s\" stroke-width=\"4\"/>\n", (linedefs[i].flags & 4 == 4) ? "black" : "grey");
+
+            if (verbose) {
+                fprintf(output, "<!-- Flags: %d-->\n", linedefs[i].flags);
+            }
+
+            fprintf(output, "<line x1=\"%d\" y1=\"%d\"", start.x + x_off, max_y - start.y );
+            fprintf(output, " x2=\"%d\" y2=\"%d\"", end.x + x_off, max_y - end.y);
+            fprintf(output, " stroke=\"%s\" stroke-width=\"4\"/>\n", (linedefs[i].flags & 4 == 4) ? "black" : "grey");
         }
-        printf("</svg>\n");
+        fprintf(output, "</svg>\n");
         free(linedefs);
         free(vertexes);
+        if (output_filename) {
+            fclose(output);
+        }
 
     }
     else {
