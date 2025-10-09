@@ -14,7 +14,7 @@
 //
 // 1. create an arglist-struct and initialize it:
 // arglist myarglist;
-// init_list(&myarglist);
+// init_list(&myarglist, argv[0], "my super duper program");
 //
 // 2. create arguments and their descriptions:
 // add_arg(&myarglist, "-n", STRING, "Argument description", true);
@@ -57,6 +57,8 @@ typedef struct {
     char** positional_args;
     size_t count;
     size_t pos_count;
+    char* progname;
+    char* description;
 } arglist;
 
 // functions:
@@ -66,7 +68,7 @@ void print_help(arglist* a);
 void add_arg(arglist* arglist, char* argname, argtype type, char* info, bool required);
 bool parse_args(arglist* arglist, int argc, char** argv);
 void free_args(arglist* arglist);
-void init_list (arglist* arglist);
+void init_list (arglist* arglist, char* progname, char* description);
 double get_float_val(arglist* arglist, const char* argname);
 char* get_string_val(arglist* arglist, const char* argname);
 int get_int_val(arglist* arglist, const char* argname);
@@ -87,7 +89,7 @@ void print_arg(argument *a) {
     }
     printf("): %s (%s)\n", a->info, a->required ? "required" : "optional");
     if (a->val != NULL) {
-        printf("current value: ");
+        printf("     current value: ");
         switch(a->type) {
             case BOOL: printf("%s\n", (*(bool*)a->val) ? "true" : "false"); break;
             case INTEGER:
@@ -109,7 +111,8 @@ void append_arg(arglist* a, argument arg) {
 }
 
 void print_help(arglist* a) {
-    fprintf(stderr, "Help:\n");
+    fprintf(stderr, "%s - %s\n\n", a->progname, a->description);
+    fprintf(stderr, "Arguments:\n");
     for (size_t i=0; i<a->count; ++i) {
         print_arg(&a->arguments[i]);
     }
@@ -208,10 +211,12 @@ void free_args(arglist* arglist) {
     arglist->pos_count = 0;
 }
 
-void init_list (arglist* arglist) {
+void init_list (arglist* arglist, char* progname, char* description) {
     // without setting count to 0 valgrind will pop up some errors because of uninitialized memory:
     arglist->count = 0;
     arglist->pos_count = 0;
+    arglist->progname = progname;
+    arglist->description = description;
 }
 
 void* get_val(arglist* arglist, const char* argname) {
