@@ -52,14 +52,175 @@ void output_svg(int width, int height, int x_off, int max_y, int num_linedefs, L
         Vertex end   = vertexes[v_index_end];
 
         if (verbose) {
-            fprintf(output, "<!-- Linedef %d - Flags: %d-->\n", i, linedefs[i].flags);
+            fprintf(output, "<!-- Linedef %d - Flags: %d / Special: %d -->\n", i, linedefs[i].flags, linedefs[i].special);
         }
 
         fprintf(output, "<line x1=\"%d\" y1=\"%d\"", start.x + x_off, max_y - start.y );
         fprintf(output, " x2=\"%d\" y2=\"%d\"", end.x + x_off, max_y - end.y);
-        fprintf(output, " stroke=\"%s\" stroke-width=\"4\"/>\n", (linedefs[i].flags & 4 == 4) ? "black" : "grey");
+        fprintf(output, " stroke=\"");
+        // TODO: put this somewhere else
+        switch(linedefs[i].special) {
+            case 0:
+                fprintf(output, "black");
+                break;
+            case 26:
+            case 32:
+                // Blue door
+                fprintf(output, "blue");
+                break;
+            case 27:
+            case 34:
+                // Yellow door
+                fprintf(output, "yellow");
+                break;
+            case 28:
+            case 33:
+                // Red door
+                fprintf(output, "red");
+                break;
+            case 1:
+            case 2:
+            case 3:
+            case 4:
+            case 29:
+            case 31:
+            case 42:
+            case 46:
+            case 50:
+            case 61:
+            case 63:
+            case 75:
+            case 76:
+            case 86:
+            case 90:
+            case 99:
+            case 103:
+            case 105:
+            case 106:
+            case 107:
+            case 108:
+            case 109:
+            case 110:
+            case 111:
+            case 112:
+            case 113:
+            case 114:
+            case 115:
+            case 116:
+            case 117:
+            case 118:
+                // Door
+                fprintf(output, "grey");
+                break;
+            case 7:
+            case 8:
+                // Stairs
+                fprintf(output, "orange");
+                break;
+            case 11:
+            case 51:
+            case 52:
+            case 124:
+                // Exit
+                fprintf(output, "springgreen");
+                break;
+            case 39:
+            case 97:
+                // Teleport
+                fprintf(output, "purple");
+                break;
+            case 62:
+            case 88:
+            case 120:
+            case 121:
+            case 122:
+            case 123:
+                // Lift
+                fprintf(output, "saddlebrown");
+                break;
+            case 5:
+            case 9:
+            case 14:
+            case 15:
+            case 18:
+            case 19:
+            case 20:
+            case 22:
+            case 23:
+            case 24:
+            case 30:
+            case 36:
+            case 37:
+            case 38:
+            case 45:
+            case 47:
+            case 55:
+            case 56:
+            case 58:
+            case 59:
+            case 60:
+            case 64:
+            case 65:
+            case 66:
+            case 67:
+            case 68:
+            case 69:
+            case 70:
+            case 71:
+                // Floor
+                fprintf(output, "slategrey");
+                break;
+            default:
+                fprintf(output, "magenta");
+                break;
+        }
+        fprintf(output, "\" stroke-width=\"");
+        switch(linedefs[i].flags) {
+            case 4:
+                fprintf(output, "2");
+                break;
+            default:
+                fprintf(output, "4");
+                break;
+        }
+        fprintf(output, "\"/>\n");
     }
     fprintf(output, "</svg>\n");
+}
+
+void list_maps(char* filename) {
+    FILE* fh = fopen(filename, "r");
+
+    Header wadheader;
+    fread(&wadheader, sizeof(wadheader), 1, fh);
+
+    Direntry *direntry;
+
+    int num_maps = 0;
+
+    direntry = malloc(wadheader.num_lumps * sizeof(Direntry));
+    char entrystring[9];
+
+    for (unsigned int x=0; x<wadheader.num_lumps; x++)
+    {
+        fseek(fh, wadheader.infotableofs+(x*sizeof(Direntry)), SEEK_SET);
+        fread(&direntry[x], sizeof(Direntry), 1, fh);
+
+        if (strlen(direntry[x].name) >= 4) {
+            if (strncmp(direntry[x].name, "MAP", 3) == 0 && direntry[x].name[3]>47 && direntry[x].name[3]<58) {
+                num_maps++;
+                strncpy(entrystring, direntry[x].name, 8);
+                printf("%d: %s (pos: %d, size: %d)\n", x, entrystring, direntry[x].filepos, direntry[x].size);
+                }
+            if (direntry[x].name[0] == 'E' && direntry[x].name[2] == 'M') {
+                num_maps++;
+                strncpy(entrystring, direntry[x].name, 8);
+                printf("%d: %s (pos: %d, size: %d)\n", x, entrystring, direntry[x].filepos, direntry[x].size);
+            }
+        }
+    }
+    printf("%d map%s found\n", num_maps, num_maps!=1 ? "s" : "");
+    free(direntry);
 }
 
 int main(int argc, char** argv) {
@@ -72,8 +233,9 @@ int main(int argc, char** argv) {
     init_list(&myarglist, argv[0], "converts a doom map to an svg image");
     add_arg(&myarglist, "-v", BOOL, "verbose output", false);
     add_arg(&myarglist, "-f", STRING, "WAD file", true);
-    add_arg(&myarglist, "-m", STRING, "map name (e.g. E1M1)", true);
+    add_arg(&myarglist, "-m", STRING, "map name (e.g. E1M1)", false);
     add_arg(&myarglist, "-o", STRING, "output file name", false);
+    add_arg(&myarglist, "-l", BOOL, "lists all maps and exits", false);
     if (!parse_args(&myarglist, argc, argv)) {
         fprintf(stderr, "Error parsing arguments!\n");
         print_help(&myarglist);
@@ -89,6 +251,16 @@ int main(int argc, char** argv) {
 
     if (is_set(&myarglist, "-o")) {
         output_filename = get_string_val(&myarglist, "-o");
+    }
+    
+    if (is_set(&myarglist, "-l")) {
+        list_maps(filename);
+        return 0;
+    }
+
+    if (!is_set(&myarglist, "-m")) {
+        fprintf(stderr, "ERROR: either -m [mapname] or -l has to be set!\n");
+        return 1;
     }
     // End commandline arguments
 
