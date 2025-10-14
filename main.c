@@ -7,12 +7,17 @@
 #define ARG_IMPLEMENTATION
 #include "args.h"
 
-bool find_map(FILE* wadfile, Direntry* direntry, Direntry* d_vertexes, Direntry* d_linedefs, char* mapname, int num_lumps, int infotableofs) {
+void output_svg(Imginfo* imginfo, Wadinfo* wadinfo, FILE* output, bool verbose);
+
+bool find_map(FILE* wadfile, Direntry* direntry, Direntry* d_vertexes, Direntry* d_linedefs, Direntry* d_things, char* mapname, int num_lumps, int infotableofs) {
     for (int i=0; i<num_lumps; ++i) {
         // TODO: check if fseek/fread
         fseek(wadfile, infotableofs+(i*sizeof(Direntry)), SEEK_SET);
         fread(direntry, sizeof(Direntry), 1, wadfile);
         if (strncmp(direntry->name, mapname, strlen(mapname)) == 0) {
+            // Things are listed right after the mapname:
+            fseek(wadfile, infotableofs+((i+1)*sizeof(Direntry)), SEEK_SET);
+            fread(d_things, sizeof(Direntry), 1, wadfile);
             // Linedefs come 2 entries after mapname:
             fseek(wadfile, infotableofs+((i+2)*sizeof(Direntry)), SEEK_SET);
             fread(d_linedefs, sizeof(Direntry), 1, wadfile);
@@ -42,191 +47,59 @@ void generate_offsets(int* x_off, int* y_off, int min_x, int min_y) {
     if (min_y>0) *y_off = min_y;
 }
 
-void output_svg(int width, int height, int x_off, int max_y, int num_linedefs, Linedef* linedefs, Vertex* vertexes, FILE* output, bool verbose) {
-    fprintf(output, "<svg version=\"1.1\"");
-    fprintf(output, " width=\"%d\" height=\"%d\">\n", width, height);
-    for (int i=0; i<num_linedefs; ++i) {
-        int16_t v_index_start = linedefs[i].v_start;
-        int16_t v_index_end   = linedefs[i].v_end;
-        Vertex start = vertexes[v_index_start];
-        Vertex end   = vertexes[v_index_end];
-
-        if (verbose) {
-            fprintf(output, "<!-- Linedef %d - Flags: %d / Special: %d -->\n", i, linedefs[i].flags, linedefs[i].special);
-        }
-
-        fprintf(output, "<line x1=\"%d\" y1=\"%d\"", start.x + x_off, max_y - start.y );
-        fprintf(output, " x2=\"%d\" y2=\"%d\"", end.x + x_off, max_y - end.y);
-        fprintf(output, " stroke=\"");
-        // TODO: put this somewhere else
-        switch(linedefs[i].special) {
-            case 0:
-                fprintf(output, "black");
-                break;
-            case 26:
-            case 32:
-                // Blue door
-                fprintf(output, "blue");
-                break;
-            case 27:
-            case 34:
-                // Yellow door
-                fprintf(output, "yellow");
-                break;
-            case 28:
-            case 33:
-                // Red door
-                fprintf(output, "red");
-                break;
-            case 1:
-            case 2:
-            case 3:
-            case 4:
-            case 29:
-            case 31:
-            case 42:
-            case 46:
-            case 50:
-            case 61:
-            case 63:
-            case 75:
-            case 76:
-            case 86:
-            case 90:
-            case 99:
-            case 103:
-            case 105:
-            case 106:
-            case 107:
-            case 108:
-            case 109:
-            case 110:
-            case 111:
-            case 112:
-            case 113:
-            case 114:
-            case 115:
-            case 116:
-            case 117:
-            case 118:
-                // Door
-                fprintf(output, "grey");
-                break;
-            case 7:
-            case 8:
-                // Stairs
-                fprintf(output, "orange");
-                break;
-            case 11:
-            case 51:
-            case 52:
-            case 124:
-                // Exit
-                fprintf(output, "springgreen");
-                break;
-            case 39:
-            case 97:
-                // Teleport
-                fprintf(output, "purple");
-                break;
-            case 62:
-            case 88:
-            case 120:
-            case 121:
-            case 122:
-            case 123:
-                // Lift
-                fprintf(output, "saddlebrown");
-                break;
-            case 5:
-            case 9:
-            case 14:
-            case 15:
-            case 18:
-            case 19:
-            case 20:
-            case 22:
-            case 23:
-            case 24:
-            case 30:
-            case 36:
-            case 37:
-            case 38:
-            case 45:
-            case 47:
-            case 55:
-            case 56:
-            case 58:
-            case 59:
-            case 60:
-            case 64:
-            case 65:
-            case 66:
-            case 67:
-            case 68:
-            case 69:
-            case 70:
-            case 71:
-                // Floor
-                fprintf(output, "slategrey");
-                break;
-            default:
-                fprintf(output, "magenta");
-                break;
-        }
-        fprintf(output, "\" stroke-width=\"");
-        switch(linedefs[i].flags) {
-            case 4:
-                fprintf(output, "2");
-                break;
-            default:
-                fprintf(output, "4");
-                break;
-        }
-        fprintf(output, "\"/>\n");
-    }
-    fprintf(output, "</svg>\n");
-}
-
-void list_maps(char* filename) {
+bool list_maps(char* filename) {
     FILE* fh = fopen(filename, "r");
+    if (fh == NULL) {
+        fprintf(stderr, "ERROR: Could not open %s!\n", filename);
+        return false;
+    }
 
     Header wadheader;
     fread(&wadheader, sizeof(wadheader), 1, fh);
 
-    Direntry *direntry;
+    Direntry *direntry = malloc(wadheader.num_lumps * sizeof(Direntry));
 
     int num_maps = 0;
 
-    direntry = malloc(wadheader.num_lumps * sizeof(Direntry));
     char entrystring[9];
 
+    printf("Reading %s (%d lumps)...\n", filename, wadheader.num_lumps);
     for (unsigned int x=0; x<wadheader.num_lumps; x++)
     {
         fseek(fh, wadheader.infotableofs+(x*sizeof(Direntry)), SEEK_SET);
         fread(&direntry[x], sizeof(Direntry), 1, fh);
 
-        if (strlen(direntry[x].name) >= 4) {
-            if (strncmp(direntry[x].name, "MAP", 3) == 0 && direntry[x].name[3]>47 && direntry[x].name[3]<58) {
+        if (strnlen(direntry[x].name, 8) >= 4) {
+            bool ismap = false;
+            char* n = direntry[x].name;
+            if (strncmp(n, "MAP", 3) == 0 && n[3]>47 && n[3]<58) {
+                // DOOM 2
+                ismap = true;
+            }
+            if (n[0] == 'E' && n[2] == 'M' && n[1]>47 && n[1]<58) {
+                // DOOM 1
+                ismap = true;
+            }
+            if (ismap) {
                 num_maps++;
-                strncpy(entrystring, direntry[x].name, 8);
-                printf("%d: %s (pos: %d, size: %d)\n", x, entrystring, direntry[x].filepos, direntry[x].size);
-                }
-            if (direntry[x].name[0] == 'E' && direntry[x].name[2] == 'M') {
-                num_maps++;
-                strncpy(entrystring, direntry[x].name, 8);
+                strncpy(entrystring, n, 8);
                 printf("%d: %s (pos: %d, size: %d)\n", x, entrystring, direntry[x].filepos, direntry[x].size);
             }
         }
     }
     printf("%d map%s found\n", num_maps, num_maps!=1 ? "s" : "");
     free(direntry);
+    fclose(fh);
+    return true;
 }
 
 int main(int argc, char** argv) {
-    bool verbose = false;
+    bool verbose     = false;
     Header wadheader;
     char wad_ident[5] = "    ";
+    Wadinfo wadinfo;
+    Imginfo imginfo;
+    imginfo.draw_things = false;
 
     // commandline arguments:
     arglist myarglist;
@@ -236,6 +109,7 @@ int main(int argc, char** argv) {
     add_arg(&myarglist, "-m", STRING, "map name (e.g. E1M1)", false);
     add_arg(&myarglist, "-o", STRING, "output file name", false);
     add_arg(&myarglist, "-l", BOOL, "lists all maps and exits", false);
+    add_arg(&myarglist, "-t", BOOL, "draw things", false);
     if (!parse_args(&myarglist, argc, argv)) {
         fprintf(stderr, "Error parsing arguments!\n");
         print_help(&myarglist);
@@ -246,20 +120,26 @@ int main(int argc, char** argv) {
     char* output_filename = NULL;
 
     if (is_set(&myarglist, "-v")) {
-            verbose = true;
-            }
+        verbose = true;
+        }
+
+    if (is_set(&myarglist, "-t")) {
+        imginfo.draw_things = true;
+    }
 
     if (is_set(&myarglist, "-o")) {
         output_filename = get_string_val(&myarglist, "-o");
     }
     
     if (is_set(&myarglist, "-l")) {
-        list_maps(filename);
+        if (!list_maps(filename)) return 1;
+        free_args(&myarglist);
         return 0;
     }
 
     if (!is_set(&myarglist, "-m")) {
         fprintf(stderr, "ERROR: either -m [mapname] or -l has to be set!\n");
+        free_args(&myarglist);
         return 1;
     }
     // End commandline arguments
@@ -281,7 +161,8 @@ int main(int argc, char** argv) {
     Direntry direntry;
     Direntry d_linedefs;
     Direntry d_vertexes;
-    if (find_map(wadfile, &direntry, &d_vertexes, &d_linedefs, mapname, wadheader.num_lumps, wadheader.infotableofs)) {
+    Direntry d_things;
+    if (find_map(wadfile, &direntry, &d_vertexes, &d_linedefs, &d_things, mapname, wadheader.num_lumps, wadheader.infotableofs)) {
         FILE* output;
         if (output_filename) {
             output = fopen(output_filename, "w");
@@ -294,16 +175,22 @@ int main(int argc, char** argv) {
             output = stdout;
         }
 
-        Linedef* linedefs = malloc(d_linedefs.size);
-        Vertex* vertexes  = malloc(d_vertexes.size);
+        wadinfo.header    = wadheader;
+        wadinfo.linedefs  = malloc(d_linedefs.size);
+        wadinfo.vertexes  = malloc(d_vertexes.size);
+        wadinfo.things    = malloc(d_things.size);
 
         fseek(wadfile, d_linedefs.filepos, SEEK_SET);
-        fread(linedefs, d_linedefs.size, 1, wadfile);
+        fread(wadinfo.linedefs, d_linedefs.size, 1, wadfile);
         fseek(wadfile, d_vertexes.filepos, SEEK_SET);
-        fread(vertexes, d_vertexes.size, 1, wadfile);
+        fread(wadinfo.vertexes, d_vertexes.size, 1, wadfile);
+        fseek(wadfile, d_things.filepos, SEEK_SET);
+        fread(wadinfo.things, d_things.size, 1, wadfile);
 
-        long int num_vertexes = d_vertexes.size/sizeof(Vertex);
-        long int num_linedefs = d_linedefs.size/sizeof(Linedef);
+
+        wadinfo.num_vertexes = d_vertexes.size/sizeof(Vertex);
+        wadinfo.num_linedefs = d_linedefs.size/sizeof(Linedef);
+        wadinfo.num_things   = d_things.size/sizeof(Thing);
 
         // TODO: this belongs in output_svg() but then we have to pass all the variables
         //       or make them global
@@ -312,26 +199,31 @@ int main(int argc, char** argv) {
             fprintf(output, "wadfile         : %s => %s\n", filename, wad_ident);
             fprintf(output, "map             : %s\n", mapname);
             fprintf(output, "num_lumps       : %d\n", wadheader.num_lumps);
-            fprintf(output, "%ld Linedefs pos: %d / size: %d\n", num_linedefs, d_linedefs.filepos, d_linedefs.size);
-            fprintf(output, "%ld Vertexes pos: %d / size: %d\n", num_vertexes, d_vertexes.filepos, d_vertexes.size);
+            fprintf(output, "num_things      : %ld\n", wadinfo.num_things);
+            fprintf(output, "%ld Linedefs pos: %d / size: %d\n", wadinfo.num_linedefs, d_linedefs.filepos, d_linedefs.size);
+            fprintf(output, "%ld Vertexes pos: %d / size: %d\n", wadinfo.num_vertexes, d_vertexes.filepos, d_vertexes.size);
             fprintf(output, "-->\n");
         }
 
         // SVG stuff:
-        int max_x = vertexes[0].x;
-        int min_x = vertexes[0].x;
-        int max_y = vertexes[0].y;
-        int min_y = vertexes[0].y;
-        int x_off = 0;
-        int y_off = 0;
-        generate_minmax(&max_x, &min_x, &max_y, &min_y, vertexes, num_vertexes);
-        generate_offsets(&x_off, &y_off, min_x, min_y);
-        int width  = max_x + x_off;
-        int height = max_y + y_off;
-        output_svg(width, height, x_off, max_y, num_linedefs, linedefs, vertexes, output, verbose);
+        int max_x = wadinfo.vertexes[0].x;
+        int min_x = wadinfo.vertexes[0].x;
+        int max_y = wadinfo.vertexes[0].y;
+        int min_y = wadinfo.vertexes[0].y;
+        imginfo.x_off = 0;
+        imginfo.y_off = 0;
+        generate_minmax(&max_x, &min_x, &max_y, &min_y, wadinfo.vertexes, wadinfo.num_vertexes);
+        generate_offsets(&imginfo.x_off, &imginfo.y_off, min_x, min_y);
+        imginfo.width  = max_x + imginfo.x_off;
+        imginfo.height = max_y + imginfo.y_off;
+        imginfo.max_x  = max_x;
+        imginfo.max_y  = max_y;
+            
+        output_svg(&imginfo, &wadinfo, output, verbose);
 
-        free(linedefs);
-        free(vertexes);
+        free(wadinfo.linedefs);
+        free(wadinfo.vertexes);
+        free(wadinfo.things);
         if (output_filename) {
             fclose(output);
         }

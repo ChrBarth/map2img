@@ -19,6 +19,27 @@ typedef struct {
     int16_t b_sidenum;
 } Linedef;
 
+typedef struct {
+    int16_t x_pos;
+    int16_t y_pos;
+    int16_t angle;
+    int16_t type;
+    int16_t flags;
+} Thing;
+
+// https://doomwiki.org/wiki/Sector
+// TODO: sectors do not contain the linedefs, but linedefs contain
+// information which sector they belong to.
+//typedef struct {
+//    int16_t floor_heigth;
+//    int16_t ceiling_height;
+//    char[8] floor_texture;
+//    char[8] ceiling_texture;
+//    int16_t light_level;
+//    int16_t special_type;
+//    int16_t tag_number;
+//} Sector;
+
 // https://doomwiki.org/wiki/WAD
 typedef struct {
     char identification[4];
@@ -31,6 +52,28 @@ typedef struct {
     int size;
     char name[8];
 } Direntry;
+
+typedef struct {
+    Header header;
+    Linedef* linedefs;
+    Vertex* vertexes;
+    Thing* things;
+    long int num_linedefs;
+    long int num_vertexes;
+    long int num_things;
+    FILE* wadfile;
+} Wadinfo;
+
+typedef struct {
+    int x_off;
+    int y_off;
+    int max_x;
+    int max_y;
+    int width;
+    int height;
+    bool draw_things;
+    //float scale;
+} Imginfo;
 
 // https://doomwiki.org/wiki/WAD#Lump_order
 // Structure for E1M1 in DOOM1.WAD:

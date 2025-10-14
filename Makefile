@@ -1,2 +1,2 @@
-all: main.c
-	$(CC) -ggdb -o map2img main.c
+all: main.c makesvg.c
+	$(CC) -ggdb -o map2img main.c makesvg.c
