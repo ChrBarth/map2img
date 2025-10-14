@@ -54,6 +54,9 @@ typedef struct {
 } Direntry;
 
 typedef struct {
+    char* filename;
+    char* mapname;
+    char wad_ident[5];
     Header header;
     Linedef* linedefs;
     Vertex* vertexes;
@@ -72,7 +75,8 @@ typedef struct {
     int width;
     int height;
     bool draw_things;
-    //float scale;
+    float scale;
+    int padding;
 } Imginfo;
 
 // https://doomwiki.org/wiki/WAD#Lump_order

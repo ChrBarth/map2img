@@ -3,7 +3,17 @@
 #include <stdlib.h>
 #include "map2img.h"
 
-void output_svg(Imginfo* imginfo, Wadinfo* wadinfo, FILE* output, bool verbose) {
+#define MONSTER_SIZE 16
+#define WEAPON_SIZE  12
+#define KEY_SIZE     12
+#define AMMO_SIZE     8
+#define ITEM_SIZE     8
+#define LINEDEF_WIDTH 4
+#define LINEDEF_SLIM  2
+#define WIDTH  imginfo->width * imginfo->scale + (2 * imginfo->padding)
+#define HEIGHT imginfo->height * imginfo->scale + (2 * imginfo->padding)
+
+void output_svg(Imginfo* imginfo, Wadinfo* wadinfo, FILE* output, bool verbose, Header* wadheader) {
     int num_linedefs = wadinfo->num_linedefs;
     int num_things   = wadinfo->num_things;
     Linedef* linedefs = wadinfo->linedefs;
@@ -13,7 +23,19 @@ void output_svg(Imginfo* imginfo, Wadinfo* wadinfo, FILE* output, bool verbose) 
     fprintf(output, "<svg version=\"1.1\"");
     fprintf(output, "  xmlns=\"http://www.w3.org/2000/svg\"\n");
     fprintf(output, "  xmlns:svg=\"http://www.w3.org/2000/svg\"\n");
-    fprintf(output, "  width=\"%d\" height=\"%d\">\n\n", imginfo->width, imginfo->height);
+    fprintf(output, "  width=\"%g\" height=\"%g\">\n\n", WIDTH, HEIGHT);
+    if (verbose) {
+        fprintf(output, "<!--\n");
+        fprintf(output, "wadfile         : %s => %s\n", wadinfo->filename, wadinfo->wad_ident);
+        fprintf(output, "map             : %s\n", wadinfo->mapname);
+        fprintf(output, "num_lumps       : %d\n", wadheader->num_lumps);
+        fprintf(output, "num_things      : %ld\n", wadinfo->num_things);
+        fprintf(output, "Linedefs        : %ld\n", wadinfo->num_linedefs);
+        fprintf(output, "Vertexes        : %ld\n", wadinfo->num_vertexes);
+        fprintf(output, "scaling         : %g\n", imginfo->scale);
+        fprintf(output, "-->\n");
+    }
+    fprintf(output, "<rect width=\"%g\" height=\"%g\" fill=\"black\" />\n", WIDTH, HEIGHT);
     for (int i=0; i<num_linedefs; ++i) {
         int16_t v_index_start = linedefs[i].v_start;
         int16_t v_index_end   = linedefs[i].v_end;
@@ -24,13 +46,12 @@ void output_svg(Imginfo* imginfo, Wadinfo* wadinfo, FILE* output, bool verbose) 
             fprintf(output, "<!-- Linedef %d - Flags: %d / Special: %d -->\n", i, linedefs[i].flags, linedefs[i].special);
         }
 
-        fprintf(output, "<line x1=\"%d\" y1=\"%d\"", start.x + imginfo->x_off, imginfo->max_y - start.y );
-        fprintf(output, " x2=\"%d\" y2=\"%d\"", end.x + imginfo->x_off, imginfo->max_y - end.y);
+        fprintf(output, "<line x1=\"%g\" y1=\"%g\"", imginfo->padding + (start.x + imginfo->x_off)*imginfo->scale, imginfo->padding + (imginfo->max_y - start.y)*imginfo->scale);
+        fprintf(output, " x2=\"%g\" y2=\"%g\"", imginfo->padding + (end.x + imginfo->x_off)*imginfo->scale, imginfo->padding + (imginfo->max_y - end.y)*imginfo->scale);
         fprintf(output, " stroke=\"");
-        // TODO: put this somewhere else
         switch(linedefs[i].special) {
             case 0:
-                fprintf(output, "black");
+                fprintf(output, "white");
                 break;
             case 26:
             case 32:
@@ -79,7 +100,7 @@ void output_svg(Imginfo* imginfo, Wadinfo* wadinfo, FILE* output, bool verbose) 
             case 117:
             case 118:
                 // Door
-                fprintf(output, "grey");
+                fprintf(output, "gainsboro");
                 break;
             case 7:
             case 8:
@@ -146,10 +167,10 @@ void output_svg(Imginfo* imginfo, Wadinfo* wadinfo, FILE* output, bool verbose) 
         fprintf(output, "\" stroke-width=\"");
         switch(linedefs[i].flags) {
             case 4:
-                fprintf(output, "2");
+                fprintf(output, "%g", LINEDEF_SLIM * imginfo->scale);
                 break;
             default:
-                fprintf(output, "4");
+                fprintf(output, "%g", LINEDEF_WIDTH * imginfo->scale);
                 break;
         }
         fprintf(output, "\"/>\n");
@@ -157,7 +178,7 @@ void output_svg(Imginfo* imginfo, Wadinfo* wadinfo, FILE* output, bool verbose) 
     if (imginfo->draw_things) {
         fprintf(output, "<!-- Things: -->\n");
         for (int i=0; i<num_things; ++i) {
-            fprintf(output, "<circle cx=\"%d\" cy=\"%d\" ", things[i].x_pos + imginfo->x_off, imginfo->max_y - things[i].y_pos);
+            fprintf(output, "<circle cx=\"%g\" cy=\"%g\" ", imginfo->padding + (things[i].x_pos + imginfo->x_off) * imginfo->scale, imginfo->padding + (imginfo->max_y - things[i].y_pos) * imginfo->scale);
             fprintf(output, "fill=\"");
             switch(things[i].type) {
                 case 68:
@@ -180,7 +201,7 @@ void output_svg(Imginfo* imginfo, Wadinfo* wadinfo, FILE* output, bool verbose) 
                 case 84:
                 case 3004:
                     // Monster
-                    fprintf(output, "crimson\" r=\"16");
+                    fprintf(output, "crimson\" r=\"%g", MONSTER_SIZE * imginfo->scale);
                     break;
                 case 2001:
                 case 2002:
@@ -190,7 +211,7 @@ void output_svg(Imginfo* imginfo, Wadinfo* wadinfo, FILE* output, bool verbose) 
                 case 2006:
                 case 82:
                     // Weapon
-                    fprintf(output, "lightsteelblue\" r=\"12");
+                    fprintf(output, "lightsteelblue\" r=\"%g", WEAPON_SIZE * imginfo->scale);
                     break;
                 case 2008:
                 case 2010:
@@ -201,7 +222,7 @@ void output_svg(Imginfo* imginfo, Wadinfo* wadinfo, FILE* output, bool verbose) 
                 case 2047:
                 case 17:
                     // Ammo
-                    fprintf(output, "lightsteelblue\" r=\"8");
+                    fprintf(output, "lightsteelblue\" r=\"%g", AMMO_SIZE * imginfo->scale);
                     break;
                 case 2013:
                 case 2014:
@@ -219,25 +240,25 @@ void output_svg(Imginfo* imginfo, Wadinfo* wadinfo, FILE* output, bool verbose) 
                 case 2025:
                 case 2011:
                     // Artifact items and powerups
-                    fprintf(output, "lavender\" r=\"8");
+                    fprintf(output, "lavender\" r=\"%g", ITEM_SIZE * imginfo->scale);
                     break;
                 case 5:
                 case 40:
                     // Blue keys
-                    fprintf(output, "blue\" r=\"12");
+                    fprintf(output, "blue\" r=\"%g", KEY_SIZE * imginfo->scale);
                     break;
                 case 13:
                 case 38:
                     // Red keys
-                    fprintf(output, "red\" r=\"12");
+                    fprintf(output, "red\" r=\"%g", KEY_SIZE * imginfo->scale);
                     break;
                 case 6:
                 case 39:
                     // Yellow keys
-                    fprintf(output, "yellow\" r=\"12");
+                    fprintf(output, "yellow\" r=\"%g", KEY_SIZE * imginfo->scale);
                     break;
                 default: 
-                    fprintf(output, "magenta\" r=\"8");
+                    fprintf(output, "magenta\" r=\"%g", ITEM_SIZE * imginfo->scale);
                     break;
             }
             fprintf(output, "\" />\n");

@@ -2,20 +2,25 @@
 
 A tool to convert DOOM(2)-Maps into SVG-images.
 
-## usage:
+## example:
 
 ```
-map2img -f WADFILE -m MAPNAME -o OUTPUT-FILE
-
-optional -v for some more information
-if no output file is provided, svg-data will be printed out to stdout
-
+map2img -f DOOM.WAD -m E1M1 -o E1M1.svg -t -p 2 -s 0.2
 ```
+creates an svg-file "E1M1.svg" from DOOM's first map (including things), scales it to 0.2 times the size
+
+## Arguments:
+
+-v (type: bool): verbose output (optional)
+-f (type: string): WAD file (required)
+-m (type: string): map name (e.g. E1M1) (optional)
+-o (type: string): output file name (optional)
+-l (type: bool): lists all maps in the wad file and exits (optional)
+-t (type: bool): draw things (optional)
+-s (type: float): scale factor (default: 0.5) (optional)
+-p (type: integer): additional padding from the image borders (default: 0) (optional)
 
 ## TODO:
 
-* scale the svg to a sensible size
-* color linedefs depending on their special value (right now only two-sided linedefs are rendered grey instead of black), e.g. secrets, exits, switches,...
 * make coloring customizable
-* display players, monsters, items,... (maybe mark them with a simple circle)
 * display sectors (and make them one shape instead of having a single line object for each linedef)

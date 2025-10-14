@@ -7,11 +7,11 @@
 #define ARG_IMPLEMENTATION
 #include "args.h"
 
-void output_svg(Imginfo* imginfo, Wadinfo* wadinfo, FILE* output, bool verbose);
+void output_svg(Imginfo* imginfo, Wadinfo* wadinfo, FILE* output, bool verbose, Header* wadheader);
 
 bool find_map(FILE* wadfile, Direntry* direntry, Direntry* d_vertexes, Direntry* d_linedefs, Direntry* d_things, char* mapname, int num_lumps, int infotableofs) {
     for (int i=0; i<num_lumps; ++i) {
-        // TODO: check if fseek/fread
+        // TODO: check if fseek/fread succeeded or not
         fseek(wadfile, infotableofs+(i*sizeof(Direntry)), SEEK_SET);
         fread(direntry, sizeof(Direntry), 1, wadfile);
         if (strncmp(direntry->name, mapname, strlen(mapname)) == 0) {
@@ -96,10 +96,12 @@ bool list_maps(char* filename) {
 int main(int argc, char** argv) {
     bool verbose     = false;
     Header wadheader;
-    char wad_ident[5] = "    ";
     Wadinfo wadinfo;
+    char wad_ident[5]   = "    ";
     Imginfo imginfo;
     imginfo.draw_things = false;
+    imginfo.scale       = 0.5;
+    imginfo.padding     = 0;
 
     // commandline arguments:
     arglist myarglist;
@@ -108,16 +110,26 @@ int main(int argc, char** argv) {
     add_arg(&myarglist, "-f", STRING, "WAD file", true);
     add_arg(&myarglist, "-m", STRING, "map name (e.g. E1M1)", false);
     add_arg(&myarglist, "-o", STRING, "output file name", false);
-    add_arg(&myarglist, "-l", BOOL, "lists all maps and exits", false);
+    add_arg(&myarglist, "-l", BOOL, "lists all maps in the wad file and exits", false);
     add_arg(&myarglist, "-t", BOOL, "draw things", false);
+    add_arg(&myarglist, "-s", FLOAT, "scale factor (default: 0.5)", false);
+    add_arg(&myarglist, "-p", INTEGER, "additional padding from the image borders (default: 0)", false);
     if (!parse_args(&myarglist, argc, argv)) {
         fprintf(stderr, "Error parsing arguments!\n");
         print_help(&myarglist);
         return 1;
     }
-    char* filename        = get_string_val(&myarglist, "-f");
-    char* mapname         = get_string_val(&myarglist, "-m");
+    wadinfo.filename      = get_string_val(&myarglist, "-f");
+    wadinfo.mapname       = get_string_val(&myarglist, "-m");
     char* output_filename = NULL;
+
+    if (is_set(&myarglist, "-p")) {
+        imginfo.padding = get_int_val(&myarglist, "-p");
+    }
+
+    if (is_set(&myarglist, "-s")) {
+        imginfo.scale = get_float_val(&myarglist, "-s");
+    }
 
     if (is_set(&myarglist, "-v")) {
         verbose = true;
@@ -132,7 +144,7 @@ int main(int argc, char** argv) {
     }
     
     if (is_set(&myarglist, "-l")) {
-        if (!list_maps(filename)) return 1;
+        if (!list_maps(wadinfo.filename)) return 1;
         free_args(&myarglist);
         return 0;
     }
@@ -144,17 +156,17 @@ int main(int argc, char** argv) {
     }
     // End commandline arguments
 
-    FILE* wadfile = fopen(filename, "rb");
+    FILE* wadfile = fopen(wadinfo.filename, "rb");
     if (wadfile == NULL) {
-        fprintf(stderr, "Could not open %s!\n", filename);
+        fprintf(stderr, "Could not open %s!\n", wadinfo.filename);
         return 1;
     }
 
     // read the header:
     fread(&wadheader, sizeof(Header), 1, wadfile);
-    strncpy(wad_ident, wadheader.identification, 4);
-    if (strcmp(wad_ident, "IWAD") != 0 && strcmp(wad_ident, "PWAD") != 0) {
-        fprintf(stderr, "ERROR, no wadfile (wad_ident: %s)\n", wad_ident);
+    strncpy(wadinfo.wad_ident, wadheader.identification, 4);
+    if (strcmp(wadinfo.wad_ident, "IWAD") != 0 && strcmp(wadinfo.wad_ident, "PWAD") != 0) {
+        fprintf(stderr, "ERROR, no wadfile (wad_ident: %s)\n", wadinfo.wad_ident);
         return 1;
     }
 
@@ -162,7 +174,7 @@ int main(int argc, char** argv) {
     Direntry d_linedefs;
     Direntry d_vertexes;
     Direntry d_things;
-    if (find_map(wadfile, &direntry, &d_vertexes, &d_linedefs, &d_things, mapname, wadheader.num_lumps, wadheader.infotableofs)) {
+    if (find_map(wadfile, &direntry, &d_vertexes, &d_linedefs, &d_things, wadinfo.mapname, wadheader.num_lumps, wadheader.infotableofs)) {
         FILE* output;
         if (output_filename) {
             output = fopen(output_filename, "w");
@@ -192,19 +204,6 @@ int main(int argc, char** argv) {
         wadinfo.num_linedefs = d_linedefs.size/sizeof(Linedef);
         wadinfo.num_things   = d_things.size/sizeof(Thing);
 
-        // TODO: this belongs in output_svg() but then we have to pass all the variables
-        //       or make them global
-        if (verbose) {
-            fprintf(output, "<!--\n");
-            fprintf(output, "wadfile         : %s => %s\n", filename, wad_ident);
-            fprintf(output, "map             : %s\n", mapname);
-            fprintf(output, "num_lumps       : %d\n", wadheader.num_lumps);
-            fprintf(output, "num_things      : %ld\n", wadinfo.num_things);
-            fprintf(output, "%ld Linedefs pos: %d / size: %d\n", wadinfo.num_linedefs, d_linedefs.filepos, d_linedefs.size);
-            fprintf(output, "%ld Vertexes pos: %d / size: %d\n", wadinfo.num_vertexes, d_vertexes.filepos, d_vertexes.size);
-            fprintf(output, "-->\n");
-        }
-
         // SVG stuff:
         int max_x = wadinfo.vertexes[0].x;
         int min_x = wadinfo.vertexes[0].x;
@@ -219,7 +218,7 @@ int main(int argc, char** argv) {
         imginfo.max_x  = max_x;
         imginfo.max_y  = max_y;
             
-        output_svg(&imginfo, &wadinfo, output, verbose);
+        output_svg(&imginfo, &wadinfo, output, verbose, &wadheader);
 
         free(wadinfo.linedefs);
         free(wadinfo.vertexes);
@@ -230,7 +229,7 @@ int main(int argc, char** argv) {
 
     }
     else {
-        fprintf(stderr, "%s not found in %s!\n", mapname, filename);
+        fprintf(stderr, "%s not found in %s!\n", wadinfo.mapname, wadinfo.filename);
         free_args(&myarglist);
         fclose(wadfile);
         return 1;
