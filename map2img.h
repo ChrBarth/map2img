@@ -1,4 +1,5 @@
 #ifndef MAP2IMG_H_
+#define MAP2IMG_H_
 
 typedef short int16_t;
 
