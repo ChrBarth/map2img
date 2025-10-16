@@ -11,6 +11,7 @@ creates an svg-file "E1M1.svg" from DOOM's first map (including things), scales 
 
 ## Arguments:
 
+```
 -v (type: bool): verbose output (optional)
 -f (type: string): WAD file (required)
 -m (type: string): map name (e.g. E1M1) (optional)
@@ -19,6 +20,7 @@ creates an svg-file "E1M1.svg" from DOOM's first map (including things), scales 
 -t (type: bool): draw things (optional)
 -s (type: float): scale factor (default: 0.5) (optional)
 -p (type: integer): additional padding from the image borders (default: 0) (optional)
+```
 
 ## TODO:
 

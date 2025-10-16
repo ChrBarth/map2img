@@ -117,6 +117,7 @@ int main(int argc, char** argv) {
     if (!parse_args(&myarglist, argc, argv)) {
         fprintf(stderr, "Error parsing arguments!\n");
         print_help(&myarglist);
+        free_args(&myarglist);
         return 1;
     }
     wadinfo.filename      = get_string_val(&myarglist, "-f");
