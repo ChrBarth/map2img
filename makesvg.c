@@ -12,6 +12,48 @@
 #define LINEDEF_SLIM  2
 #define WIDTH  imginfo->width * imginfo->scale + (2 * imginfo->padding)
 #define HEIGHT imginfo->height * imginfo->scale + (2 * imginfo->padding)
+#define REAL_X(x) imginfo->padding + (x + imginfo->x_off)*imginfo->scale
+#define REAL_Y(y) imginfo->padding + (imginfo->max_y - y)*imginfo->scale
+
+void draw_direction(FILE* output, Thing t, double x, double y, float scale, const char* color) {
+    double x2 = x;
+    double y2 = y;
+    double len = (MONSTER_SIZE + 4) * scale;
+    // 0° -> east, 90° -> south, ...
+    switch(t.angle) {
+        case 270:
+            y2 = y + len;
+            break;
+        case 315:
+            x2 = x + len;
+            y2 = y + len;
+            break;
+        case 0:
+            x2 = x + len;
+            break;
+        case 45:
+            x2 = x + len;
+            y2 = y - len;
+            break;
+        case 90:
+            y2 = y - len;
+            break;
+        case 134:
+            x2 = x2 - len;
+            y2 = y2 - len;
+            break;
+        case 180:
+            x2 = x2 - len;
+            break;
+        case 225:
+            x2 = x2 - len;
+            y2 = y2 + len;
+            break;
+        default:
+            break;
+    }
+    fprintf(output, "<line x1=\"%g\" y1=\"%g\" x2=\"%g\" y2=\"%g\" stroke=\"%s", x, y, x2, y2, color);
+}
 
 void output_svg(Imginfo* imginfo, Wadinfo* wadinfo, FILE* output, bool verbose, Header* wadheader) {
     int num_linedefs = wadinfo->num_linedefs;
@@ -46,8 +88,8 @@ void output_svg(Imginfo* imginfo, Wadinfo* wadinfo, FILE* output, bool verbose, 
             fprintf(output, "<!-- Linedef %d - Flags: %d / Special: %d -->\n", i, linedefs[i].flags, linedefs[i].special);
         }
 
-        fprintf(output, "<line x1=\"%g\" y1=\"%g\"", imginfo->padding + (start.x + imginfo->x_off)*imginfo->scale, imginfo->padding + (imginfo->max_y - start.y)*imginfo->scale);
-        fprintf(output, " x2=\"%g\" y2=\"%g\"", imginfo->padding + (end.x + imginfo->x_off)*imginfo->scale, imginfo->padding + (imginfo->max_y - end.y)*imginfo->scale);
+        fprintf(output, "<line x1=\"%g\" y1=\"%g\"", REAL_X(start.x), REAL_Y(start.y));
+        fprintf(output, " x2=\"%g\" y2=\"%g\"", REAL_X(end.x), REAL_Y(end.y));
         fprintf(output, " stroke=\"");
         switch(linedefs[i].special) {
             case 0:
@@ -178,7 +220,10 @@ void output_svg(Imginfo* imginfo, Wadinfo* wadinfo, FILE* output, bool verbose, 
     if (imginfo->draw_things) {
         fprintf(output, "<!-- Things: -->\n");
         for (int i=0; i<num_things; ++i) {
-            fprintf(output, "<circle cx=\"%g\" cy=\"%g\" ", imginfo->padding + (things[i].x_pos + imginfo->x_off) * imginfo->scale, imginfo->padding + (imginfo->max_y - things[i].y_pos) * imginfo->scale);
+            if (verbose) {
+                fprintf(output, "<!-- Thing type: %d / angle: %d / flags: %d -->\n", things[i].type, things[i].angle, things[i].flags);
+            }
+            fprintf(output, "<circle cx=\"%g\" cy=\"%g\" ", REAL_X(things[i].x_pos), REAL_Y(things[i].y_pos));
             fprintf(output, "fill=\"");
             switch(things[i].type) {
                 case 68:
@@ -201,7 +246,8 @@ void output_svg(Imginfo* imginfo, Wadinfo* wadinfo, FILE* output, bool verbose, 
                 case 84:
                 case 3004:
                     // Monster
-                    fprintf(output, "crimson\" r=\"%g", MONSTER_SIZE * imginfo->scale);
+                    fprintf(output, "crimson\" r=\"%g\" />\n", MONSTER_SIZE * imginfo->scale);
+                    draw_direction(output, things[i], (float)REAL_X(things[i].x_pos), (float)REAL_Y(things[i].y_pos), imginfo->scale, "yellow");
                     break;
                 case 2001:
                 case 2002:
@@ -256,6 +302,15 @@ void output_svg(Imginfo* imginfo, Wadinfo* wadinfo, FILE* output, bool verbose, 
                 case 39:
                     // Yellow keys
                     fprintf(output, "yellow\" r=\"%g", KEY_SIZE * imginfo->scale);
+                    break;
+                case 1:
+                case 2:
+                case 3:
+                case 4:
+                case 11:
+                    // Player/Deathmatch start
+                    fprintf(output, "green\" r=\"%g\" />\n", MONSTER_SIZE * imginfo->scale);
+                    draw_direction(output, things[i], (float)REAL_X(things[i].x_pos), (float)REAL_Y(things[i].y_pos), imginfo->scale, "yellow");
                     break;
                 default: 
                     fprintf(output, "magenta\" r=\"%g", ITEM_SIZE * imginfo->scale);
