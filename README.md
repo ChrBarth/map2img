@@ -1,4 +1,4 @@
-#map2img
+# map2img
 
 A tool to convert DOOM(2)-Maps into SVG-images.
 

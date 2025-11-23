@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include "map2img.h"
+#include <errno.h>
 
 #define ARG_IMPLEMENTATION
 #include "args.h"
@@ -10,20 +11,53 @@
 void output_svg(Imginfo* imginfo, Wadinfo* wadinfo, FILE* output, bool verbose, Header* wadheader);
 
 bool find_map(FILE* wadfile, Direntry* direntry, Direntry* d_vertexes, Direntry* d_linedefs, Direntry* d_things, char* mapname, int num_lumps, int infotableofs) {
+    int res;
     for (int i=0; i<num_lumps; ++i) {
-        // TODO: check if fseek/fread succeeded or not
-        fseek(wadfile, infotableofs+(i*sizeof(Direntry)), SEEK_SET);
-        fread(direntry, sizeof(Direntry), 1, wadfile);
+        res = fseek(wadfile, infotableofs+(i*sizeof(Direntry)), SEEK_SET);
+        if (res < 0) {
+            fprintf(stderr, "find_map(): %s\n", strerror(errno));
+            return false;
+        }
+        size_t bytes_read;
+        bytes_read = fread(direntry, 1, sizeof(Direntry), wadfile);
+        if (bytes_read != sizeof(Direntry)) {
+            fprintf(stderr, "find_map(): Direntry read failed, got %zu, expected %zu bytes!\n", bytes_read, sizeof(Direntry));
+            return false;
+        }
         if (strncmp(direntry->name, mapname, strlen(mapname)) == 0) {
             // Things are listed right after the mapname:
-            fseek(wadfile, infotableofs+((i+1)*sizeof(Direntry)), SEEK_SET);
-            fread(d_things, sizeof(Direntry), 1, wadfile);
+            res = fseek(wadfile, infotableofs+((i+1)*sizeof(Direntry)), SEEK_SET);
+            if (res < 0) {
+                fprintf(stderr, "find_map() - things: %s\n", strerror(errno));
+                return false;
+            }
+            bytes_read = fread(d_things, 1, sizeof(Direntry), wadfile);
+            if (bytes_read != sizeof(Direntry)) {
+                fprintf(stderr, "find_map(): Direntry things read failed, got %zu, expected %zu bytes!\n", bytes_read, sizeof(Direntry));
+                return false;
+            }
             // Linedefs come 2 entries after mapname:
-            fseek(wadfile, infotableofs+((i+2)*sizeof(Direntry)), SEEK_SET);
-            fread(d_linedefs, sizeof(Direntry), 1, wadfile);
+            res = fseek(wadfile, infotableofs+((i+2)*sizeof(Direntry)), SEEK_SET);
+            if (res < 0) {
+                fprintf(stderr, "find_map() - linedefs: %s\n", strerror(errno));
+                return false;
+            }
+            bytes_read = fread(d_linedefs, 1, sizeof(Direntry), wadfile);
+            if (bytes_read != sizeof(Direntry)) {
+                fprintf(stderr, "find_map(): Direntry linedefs read failed, got %zu, expected %zu bytes!\n", bytes_read, sizeof(Direntry));
+                return false;
+            }
             // Vertexes are 4 after mapname:
-            fseek(wadfile, infotableofs+((i+4)*sizeof(Direntry)), SEEK_SET);
-            fread(d_vertexes, sizeof(Direntry), 1, wadfile);
+            res = fseek(wadfile, infotableofs+((i+4)*sizeof(Direntry)), SEEK_SET);
+            if (res < 0) {
+                fprintf(stderr, "find_map() - vertexes: %s\n", strerror(errno));
+                return false;
+            }
+            bytes_read = fread(d_vertexes, 1, sizeof(Direntry), wadfile);
+            if (bytes_read != sizeof(Direntry)) {
+                fprintf(stderr, "find_map(): Direntry vertexes read failed, got %zu, expected %zu bytes!\n", bytes_read, sizeof(Direntry));
+                return false;
+            }
             return true;
         }
     }
@@ -55,7 +89,12 @@ bool list_maps(char* filename) {
     }
 
     Header wadheader;
-    fread(&wadheader, sizeof(wadheader), 1, fh);
+    size_t bytes_read;
+    bytes_read = fread(&wadheader, 1, sizeof(wadheader), fh);
+    if (bytes_read != sizeof(wadheader)) {
+        fprintf(stderr, "list_maps() fread wadheader failed (got %zu, expected %zu bytes)!\n", bytes_read, sizeof(wadheader));
+        return false;
+    }
 
     Direntry *direntry = malloc(wadheader.num_lumps * sizeof(Direntry));
 
@@ -66,8 +105,16 @@ bool list_maps(char* filename) {
     printf("Reading %s (%d lumps)...\n", filename, wadheader.num_lumps);
     for (unsigned int x=0; x<wadheader.num_lumps; x++)
     {
-        fseek(fh, wadheader.infotableofs+(x*sizeof(Direntry)), SEEK_SET);
-        fread(&direntry[x], sizeof(Direntry), 1, fh);
+        int res = fseek(fh, wadheader.infotableofs+(x*sizeof(Direntry)), SEEK_SET);
+        if (res < 0) {
+            fprintf(stderr, "list_maps(): %s", strerror(errno));
+            return false;
+        }
+        bytes_read = fread(&direntry[x], 1, sizeof(Direntry), fh);
+        if (bytes_read != sizeof(wadheader)) {
+            fprintf(stderr, "list_maps() fread Direntry failed (got %zu, expected %zu bytes)!\n", bytes_read, sizeof(Direntry));
+            return false;
+        }
 
         if (strnlen(direntry[x].name, 8) >= 4) {
             bool ismap = false;
@@ -164,7 +211,12 @@ int main(int argc, char** argv) {
     }
 
     // read the header:
-    fread(&wadheader, sizeof(Header), 1, wadfile);
+    size_t bytes_read;
+    bytes_read = fread(&wadheader, 1, sizeof(Header), wadfile);
+    if (bytes_read != sizeof(Header)) {
+        fprintf(stderr, "fread Header failed (got %zu, expected %zu bytes)!\n", bytes_read, sizeof(Header));
+        return 1;
+    }
     strncpy(wadinfo.wad_ident, wadheader.identification, 4);
     if (strcmp(wadinfo.wad_ident, "IWAD") != 0 && strcmp(wadinfo.wad_ident, "PWAD") != 0) {
         fprintf(stderr, "ERROR, no wadfile (wad_ident: %s)\n", wadinfo.wad_ident);
@@ -193,12 +245,37 @@ int main(int argc, char** argv) {
         wadinfo.vertexes  = malloc(d_vertexes.size);
         wadinfo.things    = malloc(d_things.size);
 
-        fseek(wadfile, d_linedefs.filepos, SEEK_SET);
-        fread(wadinfo.linedefs, d_linedefs.size, 1, wadfile);
-        fseek(wadfile, d_vertexes.filepos, SEEK_SET);
-        fread(wadinfo.vertexes, d_vertexes.size, 1, wadfile);
-        fseek(wadfile, d_things.filepos, SEEK_SET);
-        fread(wadinfo.things, d_things.size, 1, wadfile);
+        int res;
+        res = fseek(wadfile, d_linedefs.filepos, SEEK_SET);
+        if (res < 0) {
+            fprintf(stderr, "fseek linedefs failed: %s\n", strerror(errno));
+            return 1;
+        }
+        bytes_read = fread(wadinfo.linedefs, 1, d_linedefs.size, wadfile);
+        if (bytes_read != d_linedefs.size) {
+            fprintf(stderr, "fread linedefs failed (got %zu, expected %zu bytes)!\n", bytes_read, (size_t)d_linedefs.size);
+            return 1;
+        }
+        res = fseek(wadfile, d_vertexes.filepos, SEEK_SET);
+        if (res < 0) {
+            fprintf(stderr, "fseek vertexes failed: %s\n", strerror(errno));
+            return 1;
+        }
+        bytes_read = fread(wadinfo.vertexes, 1, d_vertexes.size, wadfile);
+        if (bytes_read != d_vertexes.size) {
+            fprintf(stderr, "fread vertexes failed (got %zu, expected %zu bytes)!\n", bytes_read, (size_t)d_vertexes.size);
+            return 1;
+        }
+        res = fseek(wadfile, d_things.filepos, SEEK_SET);
+        if (res < 0) {
+            fprintf(stderr, "fseek things failed: %s\n", strerror(errno));
+            return 1;
+        }
+        bytes_read = fread(wadinfo.things, 1, d_things.size, wadfile);
+        if (bytes_read != d_things.size) {
+            fprintf(stderr, "fread things failed (got %zu, expected %zu bytes)!\n", bytes_read, (size_t)d_things.size);
+            return 1;
+        }
 
 
         wadinfo.num_vertexes = d_vertexes.size/sizeof(Vertex);
